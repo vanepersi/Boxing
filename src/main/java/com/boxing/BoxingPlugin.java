@@ -3,6 +3,7 @@ package com.boxing;
 import com.boxing.command.BoxingAdminCommand;
 import com.boxing.command.BoxingCommand;
 import com.boxing.economy.EconomyService;
+import com.boxing.listener.EconomyListener;
 import com.boxing.listener.MatchListener;
 import com.boxing.manager.ArenaManager;
 import com.boxing.manager.MatchManager;
@@ -39,6 +40,9 @@ public final class BoxingPlugin extends JavaPlugin {
         getCommand("boxingadmin").setTabCompleter(adminCommand);
 
         getServer().getPluginManager().registerEvents(new MatchListener(this), this);
+        if (getServer().getPluginManager().getPlugin("Vault") != null) {
+            getServer().getPluginManager().registerEvents(new EconomyListener(this), this);
+        }
 
         getLogger().info("Boxing enabled. Economy: " + economyService.describe());
     }

@@ -103,11 +103,20 @@ public final class BoxingCommand implements CommandExecutor, TabCompleter {
                 return;
             }
         } else {
-            match = findOpenBettingMatch().orElse(null);
-            if (match == null) {
+            var open = findAllOpenBettingMatches();
+            if (open.isEmpty()) {
                 plugin.getMessageService().sendRaw(player, "&cNo match is open for betting. Specify an arena.");
                 return;
             }
+            if (open.size() > 1) {
+                plugin.getMessageService().sendRaw(player, "&cMultiple matches are open. Use &e/boxing bet <fighter> <amount> <arena>");
+                for (Match m : open) {
+                    plugin.getMessageService().sendRaw(player, "&8- &e" + m.getArena().getName()
+                            + " &7(" + m.getFighter1Name() + " vs " + m.getFighter2Name() + ")");
+                }
+                return;
+            }
+            match = open.getFirst();
         }
 
         UUID target = resolveFighter(match, args[1]);
@@ -123,8 +132,8 @@ public final class BoxingCommand implements CommandExecutor, TabCompleter {
             plugin.getMessageService().sendRaw(player, "&cInvalid amount.");
             return;
         }
-        if (amount <= 0) {
-            plugin.getMessageService().sendRaw(player, "&cAmount must be positive.");
+        if (!Double.isFinite(amount) || amount <= 0) {
+            plugin.getMessageService().sendRaw(player, "&cAmount must be a positive number.");
             return;
         }
 
@@ -210,6 +219,11 @@ public final class BoxingCommand implements CommandExecutor, TabCompleter {
             plugin.getMessageService().sendRaw(player, "&cUsage: /boxing spectate <arena>");
             return;
         }
+        Match own = plugin.getMatchManager().getMatch(player).orElse(null);
+        if (own != null && own.getState() == Match.State.FIGHTING && own.isFighter(player.getUniqueId())) {
+            plugin.getMessageService().sendRaw(player, "&cYou can't spectate while fighting.");
+            return;
+        }
         Optional<Arena> arena = plugin.getArenaManager().get(args[1]);
         if (arena.isEmpty()) {
             plugin.getMessageService().send(player, "arena-not-found", Map.of("arena", args[1]));
@@ -239,11 +253,16 @@ public final class BoxingCommand implements CommandExecutor, TabCompleter {
     }
 
     private Optional<Match> findOpenBettingMatch() {
+        var open = findAllOpenBettingMatches();
+        return open.isEmpty() ? Optional.empty() : Optional.of(open.getFirst());
+    }
+
+    private java.util.List<Match> findAllOpenBettingMatches() {
         return plugin.getArenaManager().getArenas().stream()
                 .map(a -> plugin.getMatchManager().getMatch(a.getName()).orElse(null))
                 .filter(m -> m != null && m.isFull()
                         && (m.getState() == Match.State.WAITING || m.getState() == Match.State.COUNTDOWN))
-                .findFirst();
+                .toList();
     }
 
     private UUID resolveFighter(Match match, String input) {

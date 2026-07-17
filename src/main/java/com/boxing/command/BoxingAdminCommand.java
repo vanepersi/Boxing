@@ -138,8 +138,8 @@ public final class BoxingAdminCommand implements CommandExecutor, TabCompleter {
             plugin.getMessageService().sendRaw(sender, "&cInvalid amount.");
             return;
         }
-        if (fee < 0) {
-            plugin.getMessageService().sendRaw(sender, "&cFee cannot be negative.");
+        if (!Double.isFinite(fee) || fee < 0) {
+            plugin.getMessageService().sendRaw(sender, "&cFee must be a non-negative number.");
             return;
         }
         Arena arena = optional.get();

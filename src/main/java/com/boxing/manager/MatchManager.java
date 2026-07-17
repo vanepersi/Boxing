@@ -4,11 +4,13 @@ import com.boxing.BoxingPlugin;
 import com.boxing.model.Arena;
 import com.boxing.model.Bet;
 import com.boxing.model.Match;
+import com.boxing.util.PayoutCalculator;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.entity.Player;
@@ -17,6 +19,7 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,6 +29,7 @@ public final class MatchManager {
     private final BoxingPlugin plugin;
     private final Map<String, Match> matchesByArena = new HashMap<>();
     private final Map<UUID, String> playerArena = new HashMap<>();
+    private final Map<UUID, Location> pendingRespawns = new HashMap<>();
 
     public MatchManager(BoxingPlugin plugin) {
         this.plugin = plugin;
@@ -45,6 +49,10 @@ public final class MatchManager {
 
     public boolean isInMatch(Player player) {
         return playerArena.containsKey(player.getUniqueId());
+    }
+
+    public Location takePendingRespawn(UUID uuid) {
+        return pendingRespawns.remove(uuid);
     }
 
     public String join(Player player, Arena arena) {
@@ -121,11 +129,31 @@ public final class MatchManager {
             return false;
         }
 
+        // Bettors can cancel their stake via /boxing leave
+        if (!match.isFighter(player.getUniqueId())) {
+            Bet bet = match.getBet(player.getUniqueId());
+            if (bet == null) {
+                return false;
+            }
+            offlineDeposit(player.getUniqueId(), bet.getAmount());
+            match.getBets().remove(player.getUniqueId());
+            untrackIfArena(player.getUniqueId(), match.getArena().getName());
+            plugin.getScoreboardService().clear(player);
+            plugin.getMessageService().send(player, "bet-cancelled", Map.of(
+                    "amount", plugin.getEconomyService().format(bet.getAmount())
+            ));
+            plugin.getScoreboardService().updateMatch(match);
+            return true;
+        }
+
         cancelTasks(match, false);
         refundPlayer(player.getUniqueId(), match);
         match.clearFighter(player.getUniqueId());
-        playerArena.remove(player.getUniqueId());
+        untrackIfArena(player.getUniqueId(), match.getArena().getName());
         plugin.getScoreboardService().clear(player);
+
+        // Fighter left before fight — refund every bet so money cannot vanish
+        refundAllBets(match, "&eA fighter left. Your bet of &a{amount}&e was refunded.");
 
         if (match.getState() == Match.State.COUNTDOWN) {
             match.setState(Match.State.WAITING);
@@ -150,6 +178,9 @@ public final class MatchManager {
     public String placeBet(Player bettor, Match match, UUID targetId, double amount) {
         if (!plugin.getEconomyService().isReady()) {
             return "economy-missing";
+        }
+        if (!Double.isFinite(amount) || amount <= 0) {
+            return "invalid-amount";
         }
         if (match.getState() != Match.State.WAITING && match.getState() != Match.State.COUNTDOWN) {
             return "betting-closed";
@@ -180,21 +211,27 @@ public final class MatchManager {
         }
 
         Bet existing = match.getBet(bettor.getUniqueId());
-        double additional = amount;
+        double existingAmount = existing == null ? 0 : existing.getAmount();
+        double balance = plugin.getEconomyService().getBalance(bettor);
+        if (balance + existingAmount < amount) {
+            plugin.getMessageService().send(bettor, "not-enough-money", Map.of(
+                    "amount", plugin.getEconomyService().format(amount),
+                    "balance", plugin.getEconomyService().format(balance)
+            ));
+            return "handled";
+        }
+
         if (existing != null) {
-            // Refund old bet then place new total
             plugin.getEconomyService().deposit(bettor, existing.getAmount());
             match.getBets().remove(bettor.getUniqueId());
         }
 
-        if (!plugin.getEconomyService().has(bettor, additional)) {
-            plugin.getMessageService().send(bettor, "not-enough-money", Map.of(
-                    "amount", plugin.getEconomyService().format(additional),
-                    "balance", plugin.getEconomyService().format(plugin.getEconomyService().getBalance(bettor))
-            ));
-            return "handled";
-        }
-        if (!plugin.getEconomyService().withdraw(bettor, additional)) {
+        if (!plugin.getEconomyService().withdraw(bettor, amount)) {
+            // Restore previous bet if withdraw somehow fails after refund
+            if (existing != null) {
+                match.putBet(existing);
+                plugin.getEconomyService().withdraw(bettor, existing.getAmount());
+            }
             return "handled";
         }
 
@@ -206,6 +243,7 @@ public final class MatchManager {
                 amount
         );
         match.putBet(bet);
+        // Never overwrite a fighter's arena mapping
         playerArena.putIfAbsent(bettor.getUniqueId(), match.getArena().getName());
         plugin.getScoreboardService().show(bettor, match);
 
@@ -233,7 +271,7 @@ public final class MatchManager {
                 .forEach(p -> plugin.getMessageService().sendRaw(p,
                         "&eBetting open: &6" + match.getFighter1Name() + " &7vs &6" + match.getFighter2Name()
                                 + " &7in &e" + match.getArena().getName()
-                                + " &8| &7/boxing bet <fighter> <amount>"));
+                                + " &8| &7/boxing bet <fighter> <amount> " + match.getArena().getName()));
 
         int taskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
             if (match.getState() != Match.State.COUNTDOWN) {
@@ -299,7 +337,7 @@ public final class MatchManager {
         plugin.getScoreboardService().updateMatch(match);
     }
 
-    private void prepareFighter(Match match, Player player, org.bukkit.Location spawn) {
+    private void prepareFighter(Match match, Player player, Location spawn) {
         match.backupInventory(player);
         if (plugin.getConfig().getBoolean("kit.clear-inventory", true)) {
             player.getInventory().clear();
@@ -347,7 +385,8 @@ public final class MatchManager {
         }
 
         UUID winnerId = match.getOpponent(victim.getUniqueId());
-        if (killer != null && match.isFighter(killer.getUniqueId())) {
+        if (killer != null && match.isFighter(killer.getUniqueId())
+                && !killer.getUniqueId().equals(victim.getUniqueId())) {
             winnerId = killer.getUniqueId();
         }
         if (winnerId == null) {
@@ -360,6 +399,7 @@ public final class MatchManager {
     public void handleQuit(Player player) {
         Match match = getMatch(player).orElse(null);
         if (match == null) {
+            pendingRespawns.remove(player.getUniqueId());
             return;
         }
 
@@ -401,11 +441,9 @@ public final class MatchManager {
         match.setState(Match.State.ENDING);
         cancelTasks(match, true);
 
-        String winnerName = match.getFighterName(winnerId);
-        String loserName = match.getFighterName(loserId);
         plugin.getMessageService().broadcast("match-win", Map.of(
-                "winner", winnerName,
-                "loser", loserName
+                "winner", match.getFighterName(winnerId),
+                "loser", match.getFighterName(loserId)
         ));
 
         distributePayouts(match, winnerId);
@@ -421,13 +459,10 @@ public final class MatchManager {
         cancelTasks(match, true);
         plugin.getMessageService().broadcast("match-draw", Map.of());
 
-        // Refund entries and bets
         for (Map.Entry<UUID, Double> entry : new HashMap<>(match.getEntryPaid()).entrySet()) {
             offlineDeposit(entry.getKey(), entry.getValue());
         }
-        for (Bet bet : match.getBets().values()) {
-            offlineDeposit(bet.getBettorId(), bet.getAmount());
-        }
+        refundAllBets(match, null);
 
         restoreAndTeleport(match);
         cleanupMatch(match);
@@ -436,63 +471,48 @@ public final class MatchManager {
     private void abortMatch(Match match, String reason) {
         match.setState(Match.State.ENDING);
         cancelTasks(match, true);
-        plugin.getServer().broadcast(net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
-                .legacyAmpersand().deserialize("&8[&6Boxing&8] &cMatch cancelled: " + reason));
+        plugin.getMessageService().broadcast("match-cancelled", Map.of("reason", reason));
         for (Map.Entry<UUID, Double> entry : new HashMap<>(match.getEntryPaid()).entrySet()) {
             offlineDeposit(entry.getKey(), entry.getValue());
         }
-        for (Bet bet : match.getBets().values()) {
-            offlineDeposit(bet.getBettorId(), bet.getAmount());
-        }
+        refundAllBets(match, null);
         restoreAndTeleport(match);
         cleanupMatch(match);
     }
 
-    /**
-     * Winner gets winner-share of the pot. Remaining share splits among bettors who picked the winner,
-     * proportional to their stake. If nobody bet on the winner, the winner also receives that share.
-     */
     private void distributePayouts(Match match, UUID winnerId) {
-        double pot = match.getTotalPot();
-        double winnerShare = plugin.getConfig().getDouble("winner-share", 0.5);
-        winnerShare = Math.max(0, Math.min(1, winnerShare));
-
-        double winnerPayout = pot * winnerShare;
-        double bettorPool = pot - winnerPayout;
-
-        double winningBetsTotal = match.getBetsOn(winnerId);
-        if (winningBetsTotal <= 0) {
-            winnerPayout = pot;
-            bettorPool = 0;
+        Map<UUID, Double> betsOnWinner = new LinkedHashMap<>();
+        for (Bet bet : match.getBets().values()) {
+            if (bet.getTargetId().equals(winnerId)) {
+                betsOnWinner.put(bet.getBettorId(), bet.getAmount());
+            }
         }
 
-        offlineDeposit(winnerId, winnerPayout);
+        double winnerShare = plugin.getConfig().getDouble("winner-share", 0.5);
+        PayoutCalculator.Result result = PayoutCalculator.calculate(match.getTotalPot(), winnerShare, betsOnWinner);
+
+        offlineDeposit(winnerId, result.winnerPayout());
         Player winner = Bukkit.getPlayer(winnerId);
         if (winner != null) {
             plugin.getMessageService().send(winner, "payout-winner", Map.of(
-                    "amount", plugin.getEconomyService().format(winnerPayout)
+                    "amount", plugin.getEconomyService().format(result.winnerPayout())
             ));
         }
 
-        if (bettorPool > 0 && winningBetsTotal > 0) {
-            for (Bet bet : match.getBets().values()) {
-                if (!bet.getTargetId().equals(winnerId)) {
-                    continue;
-                }
-                double share = bettorPool * (bet.getAmount() / winningBetsTotal);
-                offlineDeposit(bet.getBettorId(), share);
-                Player bettor = Bukkit.getPlayer(bet.getBettorId());
-                if (bettor != null) {
-                    plugin.getMessageService().send(bettor, "payout-bettor", Map.of(
-                            "amount", plugin.getEconomyService().format(share),
-                            "winner", match.getFighterName(winnerId)
-                    ));
-                }
+        for (Map.Entry<UUID, Double> entry : result.bettorPayouts().entrySet()) {
+            offlineDeposit(entry.getKey(), entry.getValue());
+            Player bettor = Bukkit.getPlayer(entry.getKey());
+            if (bettor != null) {
+                plugin.getMessageService().send(bettor, "payout-bettor", Map.of(
+                        "amount", plugin.getEconomyService().format(entry.getValue()),
+                        "winner", match.getFighterName(winnerId)
+                ));
             }
         }
     }
 
     private void restoreAndTeleport(Match match) {
+        Location lobby = match.getArena().getLobby();
         for (UUID id : new UUID[]{match.getFighter1(), match.getFighter2()}) {
             if (id == null) {
                 continue;
@@ -503,17 +523,22 @@ public final class MatchManager {
             }
             restoreInventory(match, player);
             player.setGameMode(GameMode.SURVIVAL);
-            if (match.getArena().getLobby() != null) {
-                player.teleport(match.getArena().getLobby());
-            }
             plugin.getScoreboardService().clear(player);
+
+            if (lobby != null) {
+                if (player.isDead()) {
+                    pendingRespawns.put(id, lobby.clone());
+                } else {
+                    player.teleport(lobby);
+                }
+            }
         }
         for (UUID bettorId : match.getBets().keySet()) {
             Player bettor = Bukkit.getPlayer(bettorId);
-            if (bettor != null) {
+            if (bettor != null && !match.isFighter(bettorId)) {
                 plugin.getScoreboardService().clear(bettor);
             }
-            playerArena.remove(bettorId);
+            untrackIfArena(bettorId, match.getArena().getName());
         }
     }
 
@@ -527,11 +552,15 @@ public final class MatchManager {
         if (armor != null) {
             player.getInventory().setArmorContents(armor);
         }
-        var maxHealth = player.getAttribute(Attribute.MAX_HEALTH);
-        if (maxHealth != null) {
-            player.setHealth(Math.min(player.getHealth(), maxHealth.getValue()));
-            if (player.getHealth() <= 0) {
-                player.setHealth(maxHealth.getValue());
+        if (!player.isDead()) {
+            var maxHealth = player.getAttribute(Attribute.MAX_HEALTH);
+            if (maxHealth != null) {
+                double max = maxHealth.getValue();
+                if (player.getHealth() <= 0) {
+                    player.setHealth(max);
+                } else {
+                    player.setHealth(Math.min(player.getHealth(), max));
+                }
             }
         }
         player.setFoodLevel(20);
@@ -545,11 +574,36 @@ public final class MatchManager {
         }
     }
 
+    private void refundAllBets(Match match, String messageTemplate) {
+        for (Bet bet : new HashMap<>(match.getBets()).values()) {
+            offlineDeposit(bet.getBettorId(), bet.getAmount());
+            Player bettor = Bukkit.getPlayer(bet.getBettorId());
+            if (bettor != null && messageTemplate != null) {
+                plugin.getMessageService().sendRaw(bettor,
+                        messageTemplate.replace("{amount}", plugin.getEconomyService().format(bet.getAmount())));
+            }
+            if (!match.isFighter(bet.getBettorId())) {
+                untrackIfArena(bet.getBettorId(), match.getArena().getName());
+                if (bettor != null) {
+                    plugin.getScoreboardService().clear(bettor);
+                }
+            }
+        }
+        match.getBets().clear();
+    }
+
     private void offlineDeposit(UUID uuid, double amount) {
-        if (amount <= 0) {
+        if (!Double.isFinite(amount) || amount <= 0) {
             return;
         }
         plugin.getEconomyService().deposit(Bukkit.getOfflinePlayer(uuid), amount);
+    }
+
+    private void untrackIfArena(UUID uuid, String arenaName) {
+        String current = playerArena.get(uuid);
+        if (arenaName.equals(current)) {
+            playerArena.remove(uuid);
+        }
     }
 
     private void notifyFighters(Match match, String key, Map<String, String> placeholders) {
@@ -570,8 +624,10 @@ public final class MatchManager {
         }
         int taskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(plugin, () -> {
             if (!matchesByArena.containsValue(match)) {
-                Bukkit.getScheduler().cancelTask(match.getScoreboardTaskId());
-                match.setScoreboardTaskId(-1);
+                if (match.getScoreboardTaskId() != -1) {
+                    Bukkit.getScheduler().cancelTask(match.getScoreboardTaskId());
+                    match.setScoreboardTaskId(-1);
+                }
                 return;
             }
             plugin.getScoreboardService().updateMatch(match);
@@ -596,13 +652,13 @@ public final class MatchManager {
 
     private void cleanupMatch(Match match) {
         if (match.getFighter1() != null) {
-            playerArena.remove(match.getFighter1());
+            untrackIfArena(match.getFighter1(), match.getArena().getName());
         }
         if (match.getFighter2() != null) {
-            playerArena.remove(match.getFighter2());
+            untrackIfArena(match.getFighter2(), match.getArena().getName());
         }
-        for (UUID bettor : match.getBets().keySet()) {
-            playerArena.remove(bettor);
+        for (UUID bettor : new HashMap<>(match.getBets()).keySet()) {
+            untrackIfArena(bettor, match.getArena().getName());
         }
         cancelTasks(match, true);
         matchesByArena.remove(match.getArena().getName());
@@ -614,5 +670,6 @@ public final class MatchManager {
         }
         matchesByArena.clear();
         playerArena.clear();
+        pendingRespawns.clear();
     }
 }
