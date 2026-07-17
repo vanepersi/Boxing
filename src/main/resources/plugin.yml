@@ -1,0 +1,32 @@
+name: Boxing
+version: '${version}'
+main: com.boxing.BoxingPlugin
+api-version: '26.1'
+authors: [Boxing]
+description: Arena boxing matches with entry fees and spectator betting.
+softdepend: [Vault]
+
+commands:
+  boxing:
+    description: Join, leave, bet, and view boxing matches.
+    usage: /boxing <join|leave|bet|arenas|info|stats|help>
+    aliases: [box, fight]
+  boxingadmin:
+    description: Admin setup and control for boxing arenas.
+    usage: /boxingadmin <subcommand>
+    aliases: [boxadmin, ba]
+    permission: boxing.admin
+
+permissions:
+  boxing.use:
+    description: Use player boxing commands.
+    default: true
+  boxing.bet:
+    description: Place bets on boxing matches.
+    default: true
+  boxing.admin:
+    description: Manage arenas and force match controls.
+    default: op
+  boxing.bypass.fee:
+    description: Join matches without paying the entry fee.
+    default: false

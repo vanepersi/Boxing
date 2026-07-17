@@ -1,0 +1,66 @@
+# Boxing plugin configuration
+
+# Default entry fee charged to each fighter when joining (can be overridden per arena)
+entry-fee: 100.0
+
+# Seconds fighters wait after both join before the fight starts (betting stays open)
+countdown-seconds: 15
+
+# Maximum fight length in seconds (0 = unlimited)
+match-timeout-seconds: 180
+
+# Fraction of the total pot paid to the winning fighter (rest goes to winning bettors)
+winner-share: 0.5
+
+# Minimum bet amount
+min-bet: 1.0
+
+# Maximum bet amount (0 = unlimited)
+max-bet: 10000.0
+
+# Allow betting after countdown starts (false = bets only while waiting for round start)
+allow-bets-during-countdown: true
+
+# Kit given to fighters at match start
+kit:
+  clear-inventory: true
+  give-leather-armor: true
+  give-gloves: true  # wooden sword renamed as boxing gloves
+  heal-and-feed: true
+
+# Scoreboard title (legacy color codes supported)
+scoreboard-title: "&6&lBOXING"
+
+# Messages (legacy color codes: &a, &c, etc.)
+messages:
+  prefix: "&8[&6Boxing&8] &r"
+  no-permission: "&cYou don't have permission."
+  players-only: "&cOnly players can use this command."
+  economy-missing: "&cNo economy provider is available."
+  not-enough-money: "&cYou need &e{amount}&c but only have &e{balance}&c."
+  arena-not-found: "&cArena &e{arena}&c was not found."
+  arena-not-ready: "&cArena &e{arena}&c is not fully set up."
+  arena-busy: "&cArena &e{arena}&c is already in a match."
+  already-in-match: "&cYou are already in a boxing match."
+  not-in-match: "&cYou are not in a boxing match."
+  joined: "&aYou joined arena &e{arena}&a. Entry fee: &e{fee}&a."
+  waiting-opponent: "&eWaiting for an opponent in &6{arena}&e..."
+  opponent-joined: "&a{player}&a joined! Match starts in &e{seconds}&a seconds. Betting is open."
+  left-queue: "&eYou left the boxing queue. Entry fee refunded."
+  bet-placed: "&aBet &e{amount}&a on &e{fighter}&a."
+  bet-updated: "&aUpdated bet on &e{fighter}&a to &e{amount}&a."
+  betting-closed: "&cBetting is closed for this match."
+  cannot-bet-self: "&cFighters cannot bet on the match."
+  invalid-fighter: "&cChoose fighter &e1&c or &e2&c, or use their name."
+  match-start: "&6Fight! &e{fighter1}&6 vs &e{fighter2}&6"
+  match-win: "&a{winner}&a won the fight against &c{loser}&a!"
+  match-draw: "&eThe match ended in a draw. Fees and bets were refunded."
+  payout-winner: "&aYou received &e{amount}&a for winning!"
+  payout-bettor: "&aYou won &e{amount}&a betting on &e{winner}&a!"
+  arena-created: "&aCreated arena &e{arena}&a."
+  arena-deleted: "&aDeleted arena &e{arena}&a."
+  spawn-set: "&aSet &e{spawn}&a for arena &e{arena}&a."
+  fee-set: "&aEntry fee for &e{arena}&a set to &e{fee}&a."
+  reloaded: "&aConfiguration reloaded."
+  force-started: "&aForce-started the match in &e{arena}&a."
+  force-stopped: "&aForce-stopped the match in &e{arena}&a."
