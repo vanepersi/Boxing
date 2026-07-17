@@ -44,6 +44,7 @@ public final class BoxingAdminCommand implements CommandExecutor, TabCompleter {
             case "setspawn2", "spawn2" -> handleSetSpawn(sender, args, "spawn2");
             case "setspectator", "setspectate", "spectator" -> handleSetSpawn(sender, args, "spectator");
             case "setlobby", "lobby" -> handleSetSpawn(sender, args, "lobby");
+            case "sethologram", "hologram" -> handleSetSpawn(sender, args, "hologram");
             case "setfee", "fee" -> handleSetFee(sender, args);
             case "list" -> handleList(sender);
             case "info" -> handleInfo(sender, args);
@@ -70,7 +71,7 @@ public final class BoxingAdminCommand implements CommandExecutor, TabCompleter {
         }
         plugin.getArenaManager().create(name);
         plugin.getMessageService().send(sender, "arena-created", Map.of("arena", name));
-        plugin.getMessageService().sendRaw(sender, "&7Next: setspawn1, setspawn2, setlobby (optional: setspectator, setfee)");
+        plugin.getMessageService().sendRaw(sender, "&7Next: setspawn1, setspawn2, setlobby (optional: setspectator, sethologram, setfee)");
     }
 
     private void handleDelete(CommandSender sender, String[] args) {
@@ -110,6 +111,7 @@ public final class BoxingAdminCommand implements CommandExecutor, TabCompleter {
             case "spawn2" -> arena.setSpawn2(player.getLocation());
             case "spectator" -> arena.setSpectator(player.getLocation());
             case "lobby" -> arena.setLobby(player.getLocation());
+            case "hologram" -> arena.setHologram(player.getLocation());
             default -> {
                 return;
             }
@@ -181,6 +183,7 @@ public final class BoxingAdminCommand implements CommandExecutor, TabCompleter {
         plugin.getMessageService().sendRaw(sender, "&7Spawn2: " + loc(arena.getSpawn2()));
         plugin.getMessageService().sendRaw(sender, "&7Lobby: " + loc(arena.getLobby()));
         plugin.getMessageService().sendRaw(sender, "&7Spectator: " + loc(arena.getSpectator()));
+        plugin.getMessageService().sendRaw(sender, "&7Hologram: " + loc(arena.getHologram()) + " &8(TextDisplay)");
         plugin.getMessageService().sendRaw(sender, "&7Fee: &a" + plugin.getEconomyService().format(plugin.getArenaManager().resolveEntryFee(arena)));
     }
 
@@ -236,6 +239,7 @@ public final class BoxingAdminCommand implements CommandExecutor, TabCompleter {
         plugin.getMessageService().sendRaw(sender, "&e/boxingadmin setspawn2 <arena>");
         plugin.getMessageService().sendRaw(sender, "&e/boxingadmin setlobby <arena>");
         plugin.getMessageService().sendRaw(sender, "&e/boxingadmin setspectator <arena>");
+        plugin.getMessageService().sendRaw(sender, "&e/boxingadmin sethologram <arena> &7- TextDisplay location");
         plugin.getMessageService().sendRaw(sender, "&e/boxingadmin setfee <arena> <amount>");
         plugin.getMessageService().sendRaw(sender, "&e/boxingadmin list | info <arena>");
         plugin.getMessageService().sendRaw(sender, "&e/boxingadmin forcestart|forcestop <arena>");
@@ -249,14 +253,15 @@ public final class BoxingAdminCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 1) {
             return filter(Arrays.asList(
-                    "create", "delete", "setspawn1", "setspawn2", "setlobby", "setspectator",
+                    "create", "delete", "setspawn1", "setspawn2", "setlobby", "setspectator", "sethologram",
                     "setfee", "list", "info", "forcestart", "forcestop", "reload", "help"
             ), args[0]);
         }
         if (args.length == 2) {
             String sub = args[0].toLowerCase(Locale.ROOT);
             if (List.of("delete", "setspawn1", "setspawn2", "setlobby", "setspectator", "setspectate",
-                    "setfee", "info", "forcestart", "forcestop", "spawn1", "spawn2", "lobby", "spectator", "fee")
+                    "sethologram", "hologram", "setfee", "info", "forcestart", "forcestop", "spawn1", "spawn2",
+                    "lobby", "spectator", "fee")
                     .contains(sub)) {
                 return filter(arenaNames(), args[1]);
             }

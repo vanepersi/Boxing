@@ -105,6 +105,7 @@ public final class MatchManager {
         }
 
         plugin.getScoreboardService().show(player, match);
+        plugin.getHologramService().show(match);
         startScoreboardTicker(match);
 
         plugin.getMessageService().send(player, "joined", Map.of(
@@ -631,6 +632,7 @@ public final class MatchManager {
                 return;
             }
             plugin.getScoreboardService().updateMatch(match);
+            // hologram is refreshed via ScoreboardService.updateMatch
         }, 20L, 20L);
         match.setScoreboardTaskId(taskId);
     }
@@ -661,6 +663,7 @@ public final class MatchManager {
             untrackIfArena(bettor, match.getArena().getName());
         }
         cancelTasks(match, true);
+        plugin.getHologramService().remove(match.getArena().getName());
         matchesByArena.remove(match.getArena().getName());
     }
 

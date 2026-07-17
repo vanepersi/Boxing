@@ -16,6 +16,7 @@ public final class Arena {
     private Location spawn2;
     private Location spectator;
     private Location lobby;
+    private Location hologram;
     private Double entryFeeOverride;
 
     public Arena(String name) {
@@ -58,6 +59,14 @@ public final class Arena {
         this.lobby = cloneLocation(lobby);
     }
 
+    public Location getHologram() {
+        return cloneLocation(hologram);
+    }
+
+    public void setHologram(Location hologram) {
+        this.hologram = cloneLocation(hologram);
+    }
+
     public Double getEntryFeeOverride() {
         return entryFeeOverride;
     }
@@ -76,6 +85,7 @@ public final class Arena {
         map.put("spawn2", serializeLocation(spawn2));
         map.put("spectator", serializeLocation(spectator));
         map.put("lobby", serializeLocation(lobby));
+        map.put("hologram", serializeLocation(hologram));
         if (entryFeeOverride != null) {
             map.put("entry-fee", entryFeeOverride);
         }
@@ -91,6 +101,7 @@ public final class Arena {
         arena.spawn2 = deserializeLocation(section.getConfigurationSection("spawn2"));
         arena.spectator = deserializeLocation(section.getConfigurationSection("spectator"));
         arena.lobby = deserializeLocation(section.getConfigurationSection("lobby"));
+        arena.hologram = deserializeLocation(section.getConfigurationSection("hologram"));
         if (section.contains("entry-fee")) {
             arena.entryFeeOverride = section.getDouble("entry-fee");
         }

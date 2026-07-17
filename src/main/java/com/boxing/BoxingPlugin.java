@@ -3,6 +3,7 @@ package com.boxing;
 import com.boxing.command.BoxingAdminCommand;
 import com.boxing.command.BoxingCommand;
 import com.boxing.economy.EconomyService;
+import com.boxing.hologram.HologramService;
 import com.boxing.listener.EconomyListener;
 import com.boxing.listener.MatchListener;
 import com.boxing.manager.ArenaManager;
@@ -18,6 +19,7 @@ public final class BoxingPlugin extends JavaPlugin {
     private EconomyService economyService;
     private MessageService messageService;
     private ScoreboardService scoreboardService;
+    private HologramService hologramService;
 
     @Override
     public void onEnable() {
@@ -27,6 +29,7 @@ public final class BoxingPlugin extends JavaPlugin {
         this.economyService = new EconomyService(this);
         this.arenaManager = new ArenaManager(this);
         this.scoreboardService = new ScoreboardService(this);
+        this.hologramService = new HologramService(this);
         this.matchManager = new MatchManager(this);
 
         arenaManager.load();
@@ -51,6 +54,9 @@ public final class BoxingPlugin extends JavaPlugin {
     public void onDisable() {
         if (matchManager != null) {
             matchManager.shutdown();
+        }
+        if (hologramService != null) {
+            hologramService.clearAll();
         }
         if (arenaManager != null) {
             arenaManager.save();
@@ -85,5 +91,9 @@ public final class BoxingPlugin extends JavaPlugin {
 
     public ScoreboardService getScoreboardService() {
         return scoreboardService;
+    }
+
+    public HologramService getHologramService() {
+        return hologramService;
     }
 }

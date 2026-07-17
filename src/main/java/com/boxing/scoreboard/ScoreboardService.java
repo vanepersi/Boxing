@@ -98,6 +98,7 @@ public final class ScoreboardService {
                 update(player, match);
             }
         }
+        plugin.getHologramService().update(match);
     }
 
     public void clear(Player player) {
